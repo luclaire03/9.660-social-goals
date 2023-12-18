@@ -1,0 +1,149 @@
+///fold: world constants, donutSouthTrajectory
+var ___ = ' ';
+var F = { name: 'Flower' };
+var T = { name: 'Tree' };
+var A = { name: 'Agent2' };
+
+///
+
+// NOTE: 
+// - assume gridworld 9x9 based on Ullman figure 2
+// - changed constants
+
+var grid = [
+  ['#', '#', '#', '#', '#', '#', '#', '#', '#'],
+  ['#', ___, ___, ___, '#', ___, ___, ___, '#'],
+  ['#', ___,  F , ___, ___, ___,  T , ___, '#'],
+  ['#', ___, ___, ___, '#', ___, ___, ___, '#'],
+  ['#', '#', ___, '#', '#', '#', ___, '#', '#'],
+  ['#', ___, ___, ___, '#', ___, ___, ___, '#'],
+  ['#', ___, ___, ___, ___, ___, ___, '#', '#'], // <- the extra '#' here is the second agent 
+  ['#', ___, ___, ___, '#', ___, ___, ___, '#'],
+  ['#', '#', '#', '#', '#', '#', '#', '#', '#']
+];
+
+// var world = makeGridWorldMDP({ grid, start: [3, 1] }).world;
+
+// viz.gridworld(world, { trajectory: southTrajectory });
+
+
+var mdp = makeGridWorldMDP({
+  grid,
+  noReverse: true,
+  maxTimeAtGoal: 2,
+  start: [3, 1],
+  totalTime: 11
+});
+
+var makeUtilityFunction = mdp.makeUtilityFunction;
+var world = mdp.world;
+
+
+viz.gridworld(world, { donutSouthTrajectory });
+
+
+// utility = reward function for agents
+var utilityTablePrior = function() {
+  var baseUtilityTable = {
+    'Flower': 1,
+    'Tree': 1,
+    'timeCost': -0.04
+  };
+  return uniformDraw(
+    [{ table: extend(baseUtilityTable, { 'Flower': 2 }),
+       favourite: 'flower' },
+     { table: extend(baseUtilityTable, { 'Tree': 2 }),
+       favourite: 'tree'}]
+  );
+};
+
+
+// VARIATIONS ON REWARD FUNCTIONS FOR SOCIAL GOALS:
+
+// 1. incorporating other agent's reward function into social agent 
+var socialUtilityTablePrior = function() {
+  var rho = 1;
+  var baseUtilityTable = {
+    'Flower': rho * utilityTablePrior.baseUtilityTable['Flower'] - 0.01,
+    'Tree': rho * utilityTablePrior.baseUtilityTable['Tree'] - 0.01,
+    'timeCost': -0.04
+  };
+  return uniformDraw(
+    [{ table: extend(baseUtilityTable, { 'Flower': 2 }),
+       favourite: 'flower' },
+     { table: extend(baseUtilityTable, { 'Tree': 2 }),
+       favourite: 'tree'}]
+  );
+};
+
+// 2. Incorporating altruism
+var socialUtilityTablePrior = function() {
+  var rho = 1;
+  var baseUtilityTable = {
+    'Flower': rho * utilityTablePrior.baseUtilityTable['Flower'] - 0.01 + 1,
+    'Tree': rho * utilityTablePrior.baseUtilityTable['Tree'] - 0.01 + 1,
+    'timeCost': -0.04
+  };
+  return uniformDraw(
+    [{ table: extend(baseUtilityTable, { 'Flower': 2 }),
+       favourite: 'flower' },
+     { table: extend(baseUtilityTable, { 'Tree': 2 }),
+       favourite: 'tree'}]
+  );
+};
+
+var observedTrajectory = [[{
+  loc: [4, 6],
+  timeLeft: 11,
+  terminateAfterAction: false
+  }, 'r']];
+
+
+
+var posterior = Infer({ model() {
+  var utilityTableAndFavourite = utilityTablePrior();
+  var utilityTable = utilityTableAndFavourite.table;
+  var utility = makeUtilityFunction(utilityTable);
+  var favourite = utilityTableAndFavourite.favourite;
+
+  var agent  = makeMDPAgent({ utility, alpha: 2 }, world);
+  var act = agent.act;
+
+  // For each observed state-action pair, factor on likelihood of action
+  map(
+    function(stateAction){
+      var state = stateAction[0];
+      var action = stateAction[1];
+      observe(act(state), action);
+    },
+    observedTrajectory);
+
+  return { favourite };
+}});
+
+viz(posterior);
+
+var posterior2 = Infer({ model() {
+  var socialUtilityTableAndFavourite = socialUtilityTablePrior();
+  var socialUtilityTable = socialUtilityTableAndFavourite.table;
+  var socialUtility = makeUtilityFunction(socialUtilityTable);
+  var favourite = socialUtilityTableAndFavourite.favourite;
+
+  var agent  = makeMDPAgent({ socialUtility, alpha: 2 }, world);
+  var act = agent.act;
+
+  // For each observed state-action pair, factor on likelihood of action
+  map(
+    function(stateAction){
+      var state = stateAction[0];
+      var action = stateAction[1];
+      observe(act(state), action);
+    },
+    observedTrajectory);
+
+  return { favourite };
+  // maybe instead, this is a posterior over rho, but we were not able to figure this out
+}});
+
+viz(posterior2);
+
